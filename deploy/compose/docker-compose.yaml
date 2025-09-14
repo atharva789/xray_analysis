@@ -1,0 +1,17 @@
+services:
+  db_service:
+    container_name: pulse_db_container
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: thorb
+      POSTGRES_PASSWORD: atharva789
+      POSTGRES_DB: pulse_db
+      PGPORT: 5435
+    ports:
+      - "5435:5435"
+    volumes:
+      - pgdata_pulse:/var/lib/postgresql/data
+
+volumes:
+  pgdata_pulse:

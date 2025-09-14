@@ -64,6 +64,8 @@ class MaskSideBySideViewer(QWidget):
         self.show()
 
     def load_folders(self):
+        # fetch dicoms, masks from db on app startup (async)
+        
         ct_folder = QFileDialog.getExistingDirectory(self, "Select DICOM Slice Folder")
         if not ct_folder:
             return
@@ -80,7 +82,8 @@ class MaskSideBySideViewer(QWidget):
         if len(self.dicom_slices) != len(self.mask_images):
             QMessageBox.critical(self, "Mismatch", "DICOM and mask counts do not match.")
             return
-
+        
+        # send to DB
         self.slider.setMaximum(len(self.dicom_slices) - 1)
         self.slider.setValue(0)
         self.update_images(0)
@@ -105,12 +108,12 @@ class MaskSideBySideViewer(QWidget):
                 try:
                     instance = int(base, 16)
                 except ValueError:
-                    print(f"⚠️ Skipping {fname}: not int or hex")
+                    print(f"Skipping {fname}: not int or hex")
                     continue
 
             idx = dicom_map.get(instance)
             if idx is None:
-                print(f"⚠️ No matching slice for mask {fname} (Instance: {instance})")
+                print(f"No matching slice for mask {fname} (Instance: {instance})")
                 continue
 
             file_path = os.path.join(folder_path, fname)
@@ -118,9 +121,9 @@ class MaskSideBySideViewer(QWidget):
                 dcm = pydicom.dcmread(file_path)
                 img = dcm.pixel_array.astype(np.uint8)
                 mask_images[idx] = img
-                print(f"✅ Loaded DICOM mask {fname} → slice {idx}")
+                print(f"Loaded DICOM mask {fname} → slice {idx}")
             except Exception as e:
-                print(f"⚠️ Error reading {fname}: {e}")
+                print(f"Error reading {fname}: {e}")
 
         return [img for img in mask_images if img is not None]
 

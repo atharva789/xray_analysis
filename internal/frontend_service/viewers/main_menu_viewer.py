@@ -37,6 +37,9 @@ class MainMenu(QWidget):
         self.setLayout(layout)
 
     def launch_single(self):
+        # user uploads individual image of one slice
+        # user upload -> FastAPI -> {Postgres, S3} 
+        # sends confirmation/error back
         self.single = SingleSliceViewer()
         self.single.show()
 

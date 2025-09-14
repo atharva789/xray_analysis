@@ -1,0 +1,16 @@
+CREATE OR REPLACE FUNCTION get_dicoms_by_aid(aid_input INT)
+RETURNS TABLE (
+  DICOM_ID INT,
+  DICOM_NAME VARCHAR,
+  CREATED_AT DATE,
+  FILE_ID INT,
+  FILETYPE VARCHAR,
+  OBJECT_KEY VARCHAR,
+  AGASTON_SCORE INT
+) AS $$
+BEGIN 
+  RETURN QUERY
+  SELECT *
+  FROM patient_files_n_stats_by_dicom px
+  WHERE px.AID = aid_input
+END;
