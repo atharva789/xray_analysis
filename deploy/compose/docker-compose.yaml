@@ -12,6 +12,17 @@ services:
       - "5435:5435"
     volumes:
       - pgdata_pulse:/var/lib/postgresql/data
+  api_service:
+    container_name: fastapi_container
+    image: python:3.13-slim
+    restart: always
+    build:
+      context: ../../internal/api_service
+      dockerfile: ../../internal/api_service/backend.Dockerfile
+    env_file:
+      - ../.env.backend.local
+    ports:
+      - "8010:8010"
 
 volumes:
   pgdata_pulse:

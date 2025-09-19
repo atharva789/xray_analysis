@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy import text
 import os
 
+from internal.api_service.auth.routes import auth_router
+
 db_conn_string = f"postgresql+asyncpg://{os.getenv("POSTGRES_USER")}:{os.getenv("POSTGRES_PASSWORD")}@{os.getenv("POSTGRES_HOST")}:{os.getenv("POSTGRES_PORT")}/{os.getenv("DB_NAME")}"
 
 @asynccontextmanager
@@ -33,8 +35,12 @@ async def lifespan(app: FastAPI):
     yield
   finally:
     await engine.dispose()
+    
+    
 
 app = FastAPI(lifespan=lifespan)
+
+app.include_router(auth_router, prefix="/api")
 
 @app.get("/test")
 async def get_home():
@@ -58,6 +64,8 @@ async def get_rw_session(request: Request) -> AsyncIterator[AsyncSession]:
       await session.rollback()
 
 
+
+
 @app.get("/dicoms/{aid}")
 async def get_dicoms_by_user(aid: int, session: AsyncSession = Depends[get_session]):
   result = await session.execute(
@@ -65,3 +73,4 @@ async def get_dicoms_by_user(aid: int, session: AsyncSession = Depends[get_sessi
     {"aid_input": aid}
   )
   return [dict(row) for row in result.mappings()]
+
