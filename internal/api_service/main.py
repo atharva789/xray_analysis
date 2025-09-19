@@ -8,7 +8,12 @@ import os
 
 from internal.api_service.auth.routes import auth_router
 
-db_conn_string = f"postgresql+asyncpg://{os.getenv("POSTGRES_USER")}:{os.getenv("POSTGRES_PASSWORD")}@{os.getenv("POSTGRES_HOST")}:{os.getenv("POSTGRES_PORT")}/{os.getenv("DB_NAME")}"
+db_conn_string = (
+  "postgresql+asyncpg://"
+  f"{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}"
+  f"@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}"
+  f"/{os.getenv('DB_NAME')}"
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,13 +52,13 @@ async def get_home():
   return {"Hello": "World"}
 
 # per-request session for READS
-async def get_session(request: Request) ->AsyncIterator[AsyncSession]:
-  session_maker = app.state.session_maker
+async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
+  session_maker = app.state.sessionmaker
   async with session_maker() as session:
     yield session # lazy evaluation
 
 async def get_rw_session(request: Request) -> AsyncIterator[AsyncSession]:
-  session_maker = app.state.session_maker
+  session_maker = app.state.sessionmaker
   async with session_maker() as session:
     try:
       yield session
