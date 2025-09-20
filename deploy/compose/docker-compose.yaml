@@ -14,7 +14,6 @@ services:
       - pgdata_pulse:/var/lib/postgresql/data
   api_service:
     container_name: fastapi_container
-    image: python:3.13-slim
     restart: always
     build:
       context: ../../internal/api_service
