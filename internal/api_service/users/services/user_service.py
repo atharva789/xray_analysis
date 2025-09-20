@@ -1,8 +1,8 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from internal.api_service.auth.utils.auth_utils import get_password_hash
-from internal.api_service.users.models.accounts import Accounts
-from internal.api_service.users.models.users import User
+from auth.utils.auth_utils import get_password_hash
+from users.models.accounts import Accounts
+from users.models.users import User
 
 
 async def get_user_by_email(email: str, session: AsyncSession) -> Accounts | None:

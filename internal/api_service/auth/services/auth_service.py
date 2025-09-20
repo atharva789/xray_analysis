@@ -1,14 +1,14 @@
 from typing import Annotated
 from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
-from internal.api_service.users.models.accounts import Accounts
+from users.models.accounts import Accounts
 import jwt
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy.ext.asyncio import AsyncSession
-from internal.api_service.auth.models.token import TokenData
-from internal.api_service.auth.utils.auth_utils import verify_password
-from internal.api_service.users.services.user_service import get_user_by_email
-from internal.api_service.main import get_session
+from auth.models.token import TokenData
+from auth.utils.auth_utils import verify_password
+from users.services.user_service import get_user_by_email
+from db_service.utils.db_utils import get_session
 import os
 from datetime import datetime, timedelta, timezone
 
