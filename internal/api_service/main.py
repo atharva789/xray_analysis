@@ -7,6 +7,7 @@ from sqlalchemy import text
 import os
 
 from internal.api_service.auth.routes import auth_router
+from internal.api_service.auth.services.auth_service import get_current_active_user
 
 db_conn_string = f"postgresql+asyncpg://{os.getenv("POSTGRES_USER")}:{os.getenv("POSTGRES_PASSWORD")}@{os.getenv("POSTGRES_HOST")}:{os.getenv("POSTGRES_PORT")}/{os.getenv("DB_NAME")}"
 
@@ -67,7 +68,7 @@ async def get_rw_session(request: Request) -> AsyncIterator[AsyncSession]:
 
 
 @app.get("/dicoms/{aid}")
-async def get_dicoms_by_user(aid: int, session: AsyncSession = Depends[get_session]):
+async def get_dicoms_by_user(aid: int, session: AsyncSession = Depends[get_session, get_current_active_user]):
   result = await session.execute(
     text("get_dicoms_by_aid"),
     {"aid_input": aid}
