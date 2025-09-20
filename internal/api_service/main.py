@@ -54,8 +54,8 @@ async def get_home():
   return {"Hello": "World"}
 
 
-@app.get("/dicoms/{aid}")
-async def get_dicoms_by_user(aid: int, session: AsyncSession = Depends[get_session, get_current_active_user]):
+@app.get("/dicoms/{aid}", dependencies=[Depends(get_current_active_user)])
+async def get_dicoms_by_user(aid: int, session: AsyncSession = Depends(get_session)):
   result = await session.execute(
     text("get_dicoms_by_aid"),
     {"aid_input": aid}
