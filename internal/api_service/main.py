@@ -1,14 +1,11 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Depends
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import text
 import os
 
 from auth.routes.auth_router import auth_router
-from auth.services.auth_service import get_current_active_user
-from db_service.utils.db_utils import get_session, get_rw_session
+from internal.api_service.users.routes import user_router
 
 db_conn_string = (
   "postgresql+asyncpg://"
@@ -48,17 +45,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(auth_router, prefix="/api")
+app.include_router(user_router, prefix="/user")
+
 
 @app.get("/test")
 async def get_home():
   return {"Hello": "World"}
-
-
-@app.get("/dicoms/{aid}", dependencies=[Depends(get_current_active_user)])
-async def get_dicoms_by_user(aid: int, session: AsyncSession = Depends(get_session)):
-  result = await session.execute(
-    text("get_dicoms_by_aid"),
-    {"aid_input": aid}
-  )
-  return [dict(row) for row in result.mappings()]
-
