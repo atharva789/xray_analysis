@@ -17,13 +17,11 @@ URL_EXPIRATION_TIME=3600
 
 def get_temp_url(client, bucket, key):
   try:
-    response = client.get_presigned_url(
-        response = client.generate_presigned_url(
+    response = client.generate_presigned_url(
         ClientMethod='get_object',
         Params={'Bucket': bucket, 'Key':key},
         ExpiresIn=URL_EXPIRATION_TIME
       )
-    )
     return response
   except Exception as e:
     print(f"{e}")
@@ -56,7 +54,7 @@ async def get_dicoms_by_user(aid: int, session: tuple = Depends(get_session)) ->
   ]
 
 
-@user_router.get("/{aid}/session/{session_id}", response_model=ReadAccession)
+@user_router.get("/{aid}/session/{session_id}")
 async def get_data_by_session(
   aid: int, 
   session_id: int, 
@@ -72,23 +70,31 @@ async def get_data_by_session(
       aid_input=aid,dicom_id_input=session_id)
   )
   res = result.mappings().all()
-  accession: ReadAccession
-  files: List[FileResponse]
-  last_dicom_name = ""
-  for i,row in enumerate(res):
-    if i > 0 and last_dicom_name != row["dicom_name"]:
-      accession.files = files
-      return accession
-    accession.created_at = row["created_at"]
-    accession.name = row["dicom_name"]
+  files: List[FileResponse] = []
+  created_at = None
+  dicom_name = None
+  agaston_score = None
+  if len(res) == 0:
+    return None
+  for row in res:    
+    created_at = row["created_at"]
+    dicom_name = row["dicom_name"]
+    agaston_score = row["agaston_score"]
     temp_url = get_temp_url(client,bucket,row["object_key"])
     files.append(
       FileResponse(
-        filetype=row["filetype"],
+        type=row["filetype"],
+        object_key=row["object_key"],
         s3_url=temp_url 
       )
     )
-  accession.files = files
+  accession = ReadAccession(
+    aid=aid,
+    created_at=created_at,
+    dicom_name=dicom_name,
+    agaston_score=agaston_score,
+    files=files
+  )
   return accession
 
 # make new accession? 

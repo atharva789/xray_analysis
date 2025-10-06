@@ -44,6 +44,6 @@ BEGIN
     FROM
       patient_files_n_stats_by_dicom D
     WHERE
-      D.aid = aid_input AND D.dicom_id = dicom_id_input;
+      D.PATIENT_ID = aid_input AND D.dicom_id = dicom_id_input;
 END;
 $$ LANGUAGE plpgsql;
