@@ -1,79 +1,62 @@
--- This script populates the database, ensuring all 50 accounts become patients
--- and each patient receives 1 to 3 DICOM studies with 60 slices and 1 mask each.
 DO $$
 DECLARE
-    -- MODIFIED: Configuration updated to your requirements
-    v_num_patients INT := 50;
-    v_num_slices_per_study INT := 60;
-    v_studies_per_patient INT;
-
-    -- Loop variables
-    v_patient_aid INT;
-    v_dicom_id INT;
-    v_stat_id INT;
-    v_file_id INT;
-    v_file_loop_index INT;
-    v_file_type VARCHAR;
-    v_object_key VARCHAR;
+  i INT; -- user counter
+  j INT; -- dicom counter
+  k INT; -- slice counter
+  aid_val INT;
+  stat_id_val INT;
+  dicom_id_val INT;
+  file_id_val INT;
 BEGIN
-    RAISE NOTICE 'Starting data generation for 50 patients...';
+  FOR i IN 1..50 LOOP
+    -- Insert into ACCOUNTS
+    INSERT INTO ACCOUNTS (USERNAME, EMAIL, FNAME, LNAME, PSWRD_HASH, DOB)
+    VALUES (
+      'user_' || i,
+      'user_' || i || '@example.com',
+      'First' || i,
+      'Last' || i,
+      decode(md5(random()::text), 'hex'),
+      DATE '1990-01-01' + (i || ' days')::interval
+    )
+    RETURNING AID INTO aid_val;
 
-    -- Step 1: Populate the PATIENTS table for all 50 accounts
-    -- RAISE NOTICE '  -> Populating PATIENTS...';
-    -- FOR v_patient_aid IN 1..v_num_patients LOOP
-    --     INSERT INTO PATIENTS (AID, MRN)
-    --     VALUES (v_patient_aid, 100000 + v_patient_aid * 10 + floor(random() * 10));
-    -- END LOOP;
+    -- Insert into PATIENTS
+    INSERT INTO PATIENTS (AID, MRN) VALUES (aid_val, 100000 + i);
 
-    -- Step 2 & 3: Loop through each patient to generate their studies and links
-    RAISE NOTICE '  -> Generating studies and files for each patient...';
-    FOR v_patient_aid IN 1..v_num_patients LOOP
-        -- Assign a random number of studies (1, 2, or 3) to this patient
-        v_studies_per_patient := floor(random() * 3 + 1);
-        
-        RAISE NOTICE '    -> Assigning % studies to patient AID %', v_studies_per_patient, v_patient_aid;
+    -- For each user: 5 DICOMs
+    FOR j IN 1..5 LOOP
+      -- Insert patient stat
+      INSERT INTO PATIENT_STATS (AGASTON_SCORE)
+      VALUES (floor(random() * 100)::INT)
+      RETURNING STAT_ID INTO stat_id_val;
 
-        FOR i IN 1..v_studies_per_patient LOOP
-            -- Create a patient stat record
-            INSERT INTO PATIENT_STATS (AGASTON_SCORE)
-            VALUES (floor(random() * 800))
-            RETURNING STAT_ID INTO v_stat_id;
+      -- Insert DICOM
+      INSERT INTO DICOMS (DICOM_NAME, STAT_ID)
+      VALUES ('dicom_' || i || '_' || j, stat_id_val)
+      RETURNING DICOM_ID INTO dicom_id_val;
 
-            -- Create the main DICOM record
-            INSERT INTO DICOMS (DICOM_NAME, STAT_ID)
-            VALUES ('Study ' || substr(md5(random()::text), 1, 8), v_stat_id)
-            RETURNING DICOM_ID INTO v_dicom_id;
+      -- Link patient ↔ dicom
+      INSERT INTO PATIENTDICOMS (PATIENT_ID, DICOM_ID)
+      VALUES (aid_val, dicom_id_val);
 
-            -- Link this new DICOM study directly to the current patient
-            INSERT INTO PATIENTDICOMS (PATIENT_ID, DICOM_ID)
-            VALUES (v_patient_aid, v_dicom_id);
+      -- For each DICOM: 5 slices
+      FOR k IN 1..5 LOOP
+        INSERT INTO FILERECORDS (FILETYPE, OBJECT_KEY)
+        VALUES (
+          'slice',
+          's3://bucket/user_' || i || '/dicom_' || j || '/slice_' || k || '.dcm'
+        )
+        RETURNING FILE_ID INTO file_id_val;
 
-            -- Create file records (60 slices and 1 mask)
-            FOR v_file_loop_index IN 1..(v_num_slices_per_study + 1) LOOP
-                -- The last file is the mask
-                IF v_file_loop_index > v_num_slices_per_study THEN
-                    v_file_type := 'mask';
-                    v_object_key := 'masks/dicom_' || v_dicom_id || '/mask_' || substr(md5(random()::text), 1, 12) || '.nii.gz';
-                ELSE
-                    v_file_type := 'slice';
-                    v_object_key := 'slices/dicom_' || v_dicom_id || '/slice_' || v_file_loop_index || '.dcm';
-                END IF;
+        -- link dicom ↔ file
+        INSERT INTO DICOMFILES (DICOM_ID, FILE_ID)
+        VALUES (dicom_id_val, file_id_val);
 
-                -- Insert the file record
-                INSERT INTO FILERECORDS (FILETYPE, OBJECT_KEY)
-                VALUES (v_file_type, v_object_key)
-                RETURNING FILE_ID INTO v_file_id;
-
-                -- Link the file to the DICOM study
-                INSERT INTO DICOMFILES (DICOM_ID, FILE_ID)
-                VALUES (v_dicom_id, v_file_id);
-
-                -- Link the file directly to the patient
-                INSERT INTO PATIENTFILES (AID, FILE_ID)
-                VALUES (v_patient_aid, v_file_id);
-            END LOOP;
-        END LOOP;
+        -- link patient ↔ file
+        INSERT INTO PATIENTFILES (FILE_ID, AID)
+        VALUES (file_id_val, aid_val);
+      END LOOP;
     END LOOP;
-
-    RAISE NOTICE 'Data generation complete.';
+  END LOOP;
 END $$;
