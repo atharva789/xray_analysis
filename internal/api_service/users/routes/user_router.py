@@ -150,11 +150,10 @@ async def create_accession(
         text("""
              INSERT INTO DICOMFILES (DICOM_ID, FILE_ID)
              VALUES (:dicom_id, :file_id)
-             """),
-        {
-          "dicom_id": accession_id,
-          "file_id": file_record.file_id
-        }
+             """).bindparams(
+               dicom_id=accession_id,
+               file_id=file_record.file_id
+             )
       )
       # then PatientDicoms junction table
       
