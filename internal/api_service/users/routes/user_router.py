@@ -1,14 +1,14 @@
 from sqlalchemy import text
 from cloud_services import get_s3
 from typing_extensions import Annotated, List
-from fastapi import APIRouter, Request, UploadFile, File, Depends, HTTPException, status
+from fastapi import APIRouter, Form, UploadFile, File, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from botocore.exceptions import BotoCoreError, ClientError
 import secrets, base64
 
 from auth.models.token import Token
-from auth.services.auth_service import authenticate_user, create_access_token
-from db_service.utils.db_utils import get_session
+from auth.services.auth_service import *
+from db_service.utils.db_utils import *
 from db_service.models.py_models import *
 from db_service.models.models import *
 from users.services.stream_service import StreamWrapper
@@ -97,20 +97,21 @@ async def get_data_by_session(
 # make new accession? 
   # upload new dicoms?
 
-def add_record(record: any, session: AsyncSession) -> int:
+async def add_record(record: any, session: AsyncSession) -> int:
   session.add(record)
-  session.refresh(record)
-  return session.record
+  await session.flush()
+  await session.refresh(record)
+  return record
 
 
 @user_router.post("/new_accession")
 async def create_accession(
-  accession: WriteAccession, 
   files: Annotated[List[UploadFile], File()],
+  accession: str = Form(),
   session: AsyncSession = Depends(get_session), 
   s3_data: tuple = Depends(get_s3)):
   """
-  Returns 2 DicomFiles objects:
+  Returns 1 DicomFiles object:
   {
     "dicom_id": x,
     "stats": {
@@ -129,8 +130,8 @@ async def create_accession(
   # write to S3, get object key  
   client, bucket = s3_data
   accession_id = -1
-  annotated_file = FileResponse
   try:
+    accession = WriteAccession.model_validate_json(accession)
     for i, file in enumerate(files):
       # background task? 
       key = f"/Dicoms/{accession.aid}/{datetime.now()}_{file.filename}"
@@ -142,10 +143,10 @@ async def create_accession(
       
       # add to: FileRecords, Dicoms, Dicomfiles
       file_record = FileRecords(filetype="slice", object_key=key)
-      file_record = add_record(file_record)
+      file_record = await add_record(file_record, session)
       if i == 0:
         new_accession = Dicoms(dicom_name=accession.dicom_name)
-        new_accession = add_record(new_accession, session)
+        new_accession = await add_record(new_accession, session)
         accession_id = new_accession.dicom_id
       
       # add to DICOMFiles junction table,
@@ -161,26 +162,29 @@ async def create_accession(
       # then PatientDicoms junction table
       
       patient_dicom_record = PatientDicoms(patient_id=accession.aid, dicom_id=accession_id)
-      patient_dicom_record = add_record(patient_dicom_record, session)
+      patient_dicom_record = await add_record(patient_dicom_record, session)
       
       # dummy function: ML pipeline generates:
       #   1. Mask
       #   2. Agaston
       # introduce dummy func as celery task?
-    annotated_file(
+    annotated_file = UploadNewFile(
       type="mask",
-      object_key=None,
-      s3_url=response
+      object_key="",
+      s3_url=""
     )
-
+    
+    await session.commit()
+    
     return WriteAccession(
-      accession_id,
+      aid=accession_id,
+      dicom_name=accession.dicom_name,
       agaston_score=0,
-      files=List[annotated_file]
+      files=[annotated_file]
     )
       
   except Exception as e:
-    session.rollback()
+    await session.rollback()
     # send to kafka next time
     raise HTTPException(status_code=501, detail=f"Error occured while file upload: {e}")
 
