@@ -1,6 +1,7 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from typing import AsyncIterator
 from fastapi import Request
+
 
 def _get_sessionmaker(request: Request) -> async_sessionmaker[AsyncSession]:
   session_maker = getattr(request.app.state, "sessionmaker", None)

@@ -1,9 +1,9 @@
 # models/__init__.py
-from .models import Accounts
-from .models import Patients
-from .models import Dicoms
-from .models import FileRecords
-from .models import PatientStats
-from .models import DICOMFiles
-from .models import PatientDicoms
-from .models import PatientFiles
+from .models.models import Accounts
+from .models.models import Patients
+from .models.models import Dicoms
+from .models.models import FileRecords
+from .models.models import PatientStats
+from .models.models import DICOMFiles
+from .models.models import PatientDicoms
+from .models.models import PatientFiles

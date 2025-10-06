@@ -1,7 +1,7 @@
 from sqlalchemy import text
-from main import get_s3
+from cloud_services import get_s3
 from typing_extensions import Annotated, List
-from fastapi import APIRouter, Request, UploadFile, Depends, HTTPException, status
+from fastapi import APIRouter, Request, UploadFile, File, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from botocore.exceptions import BotoCoreError, ClientError
 import secrets, base64
@@ -13,37 +13,67 @@ from db_service.models.py_models import *
 from db_service.models.models import *
 from users.services.stream_service import StreamWrapper
 
+URL_EXPIRATION_TIME=3600
+
+def get_temp_url(client, bucket, key):
+  try:
+    response = client.get_presigned_url(
+        response = client.generate_presigned_url(
+        ClientMethod='get_object',
+        Params={'Bucket': bucket, 'Key':key},
+        ExpiresIn=URL_EXPIRATION_TIME
+      )
+    )
+    return response
+  except Exception as e:
+    print(f"{e}")
 
 user_router = APIRouter(
-  prefix="/user",
   tags=["User"]
 )
 # @app.get("/dicoms/{aid}", dependencies=[Depends(get_current_active_user)], response_model=List[Record])
-@user_router.get("/{aid}/sessions", response_model=List[Record])
-async def get_dicoms_by_user(aid: int, session: Depends[get_session]):
+@user_router.get("/{aid}/sessions")
+async def get_dicoms_by_user(aid: int, session: tuple = Depends(get_session)) -> List[DBAccession]:
   """
   Fetch all 'Accessions' by user
   """
   result = await session.execute(
-    text("get_dicoms_by_aid"),
-    {"aid_input": aid}
+    text("select * from get_dicoms_by_aid(:aid_input)").bindparams(aid_input=aid)
   )
-  return [Record(**dict(row)) for row in result.mappings()]
+  return [
+    DBAccession(
+      aid=aid,
+      created_at=row["created_at"],
+      agaston_score=row["agaston_score"],
+      dicom_name=row["dicom_name"],
+      file=FileResponse(
+        object_key=row["object_key"],
+        type=row["filetype"],
+        s3_url=None
+      )
+    )
+    for row in result.mappings()
+  ]
 
 
-@user_router.get("/{aid}/session", response_model=ReadAccession)
-async def get_data_by_session(aid: int, session_id: int, session: Depends[get_session]):
+@user_router.get("/{aid}/session/{session_id}", response_model=ReadAccession)
+async def get_data_by_session(
+  aid: int, 
+  session_id: int, 
+  session: AsyncSession = Depends(get_session), 
+  data: tuple = Depends(get_s3)):
   """
   Fetch all Coned CTs by Accession (currently called 'Dicoms')
   return (most importantly) 
   """
+  client, bucket = data
   result = await session.execute(
-    text("get_accession"),
-    {"aid_input": aid, "dicom_id_input": session_id}
+    text("select * from get_accession(:aid_input,:dicom_id_input)").bindparams(
+      aid_input=aid,dicom_id_input=session_id)
   )
   res = result.mappings().all()
   accession: ReadAccession
-  files: List[File]
+  files: List[FileResponse]
   last_dicom_name = ""
   for i,row in enumerate(res):
     if i > 0 and last_dicom_name != row["dicom_name"]:
@@ -51,10 +81,11 @@ async def get_data_by_session(aid: int, session_id: int, session: Depends[get_se
       return accession
     accession.created_at = row["created_at"]
     accession.name = row["dicom_name"]
+    temp_url = get_temp_url(client,bucket,row["object_key"])
     files.append(
-      File(
+      FileResponse(
         filetype=row["filetype"],
-        object_key=row["object_key"]
+        s3_url=temp_url 
       )
     )
   accession.files = files
@@ -63,14 +94,18 @@ async def get_data_by_session(aid: int, session_id: int, session: Depends[get_se
 # make new accession? 
   # upload new dicoms?
 
-def add_record(record, session: AsyncSession) -> int:
+def add_record(record: any, session: AsyncSession) -> int:
   session.add(record)
   session.refresh(record)
   return session.record
 
 
 @user_router.post("/new_accession")
-async def create_accession(accession: WriteAccession, session: Depends[get_session], s3_data: Depends[get_s3], files: List[UploadFile] = File(...)):
+async def create_accession(
+  accession: WriteAccession, 
+  files: Annotated[List[UploadFile], File()],
+  session: AsyncSession = Depends(get_session), 
+  s3_data: tuple = Depends(get_s3)):
   """
   Returns 2 DicomFiles objects:
   {
@@ -91,11 +126,16 @@ async def create_accession(accession: WriteAccession, session: Depends[get_sessi
   # write to S3, get object key  
   client, bucket = s3_data
   accession_id = -1
+  annotated_file = FileResponse
   try:
     for i, file in enumerate(files):
       # background task? 
       key = f"/Dicoms/{accession.aid}/{datetime.now()}_{file.filename}"
       client.upload_fileobj(file.file, bucket, key)
+      
+      # get pre-signed URL for DUMMY 
+      # AI generated image mask
+      response = get_temp_url(client,bucket,key)
       
       # add to: FileRecords, Dicoms, Dicomfiles
       file_record = FileRecords(filetype="slice", object_key=key)
@@ -125,37 +165,26 @@ async def create_accession(accession: WriteAccession, session: Depends[get_sessi
       #   1. Mask
       #   2. Agaston
       # introduce dummy func as celery task?
+    annotated_file(
+      type="mask",
+      object_key=None,
+      s3_url=response
+    )
 
-    return True
+    return WriteAccession(
+      accession_id,
+      agaston_score=0,
+      files=List[annotated_file]
+    )
       
   except Exception as e:
     session.rollback()
     # send to kafka next time
     raise HTTPException(status_code=501, detail=f"Error occured while file upload: {e}")
-  return True
 
 
 def get_random_str(k=32):
   return base64.urlsafe_b64decode(secrets.token_bytes(k)).rstrip(b'=').decode("utf-8")
-
-
-@user_router.post("/new_accession/fast")
-async def create_accession(accession: WriteAccession, session: Depends[get_session], s3_data: Depends[get_s3], request: Request):
-  try:  
-    stream_wrapper = StreamWrapper(request.stream())
-    random_val = get_random_str()
-    key = f"/Dicoms/{accession.aid}_{datetime.now()}_{random_val}"
-    client, bucket = s3_data
-    client.upload_fileobj(stream_wrapper, bucket, key)
-    
-    # write to postgres
-    
-    
-    return True
-  except (BotoCoreError, ClientError) as e:
-    raise HTTPException(status_code=500, detail=str(e))
-
-
 
 @user_router.post("/update_accession")
 async def update_accession(accession: UpdateAccession):
