@@ -36,19 +36,15 @@ async def get_dicoms_by_user(aid: int, session: tuple = Depends(get_session)) ->
   Fetch all 'Accessions' by user
   """
   result = await session.execute(
-    text("select * from get_dicoms_by_aid(:aid_input)").bindparams(aid_input=aid)
+    text("select distinct * from get_dicoms_by_aid(:aid_input)").bindparams(aid_input=aid)
   )
   return [
     DBAccession(
       aid=aid,
+      dicom_id=row["dicom_id"],
       created_at=row["created_at"],
       agaston_score=row["agaston_score"],
       dicom_name=row["dicom_name"],
-      file=FileResponse(
-        object_key=row["object_key"],
-        type=row["filetype"],
-        s3_url=None
-      )
     )
     for row in result.mappings()
   ]
@@ -92,6 +88,7 @@ async def get_data_by_session(
     aid=aid,
     created_at=created_at,
     dicom_name=dicom_name,
+    dicom_id=session_id,
     agaston_score=agaston_score,
     files=files
   )
