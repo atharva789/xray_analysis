@@ -13,6 +13,7 @@ class FileResponse(BaseFile):
 class BaseAccession(BaseModel):
   aid: int
   dicom_name: str
+  dicom_id: int
 
 class ReadAccession(BaseAccession):
   created_at: datetime
@@ -21,7 +22,6 @@ class ReadAccession(BaseAccession):
   
 class DBAccession(BaseAccession):
   created_at:datetime
-  file: FileResponse
   agaston_score: int
   
 class WriteAccession(BaseAccession):

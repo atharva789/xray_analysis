@@ -3,9 +3,6 @@ RETURNS TABLE (
   DICOM_ID INT,
   DICOM_NAME VARCHAR,
   CREATED_AT TIMESTAMP,
-  FILE_ID INT,
-  FILETYPE VARCHAR,
-  OBJECT_KEY VARCHAR,
   AGASTON_SCORE INT
 ) AS $$
 BEGIN
@@ -14,9 +11,6 @@ BEGIN
       px.DICOM_ID,
       px.DICOM_NAME,
       px.CREATED_AT,
-      px.FILE_ID,
-      px.FILETYPE,
-      px.OBJECT_KEY,
       px.AGASTON_SCORE
     FROM
       patient_files_n_stats_by_dicom px
