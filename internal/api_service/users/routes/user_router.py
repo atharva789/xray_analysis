@@ -30,11 +30,12 @@ user_router = APIRouter(
   tags=["User"]
 )
 # @app.get("/dicoms/{aid}", dependencies=[Depends(get_current_active_user)], response_model=List[Record])
-@user_router.get("/{aid}/sessions")
-async def get_dicoms_by_user(aid: int, session: tuple = Depends(get_session)) -> List[DBAccession]:
+@user_router.get("/sessions")
+async def get_dicoms_by_user(user = Depends(get_current_active_user), session: tuple = Depends(get_session)) -> List[DBAccession]:
   """
   Fetch all 'Accessions' by user
   """
+  aid = user.aid
   result = await session.execute(
     text("select distinct * from get_dicoms_by_aid(:aid_input)").bindparams(aid_input=aid)
   )
@@ -50,17 +51,20 @@ async def get_dicoms_by_user(aid: int, session: tuple = Depends(get_session)) ->
   ]
 
 
-@user_router.get("/{aid}/session/{session_id}")
+@user_router.get("get-session/{session_id}")
 async def get_data_by_session(
   aid: int, 
   session_id: int, 
+  user = Depends(get_current_active_user),
   session: AsyncSession = Depends(get_session), 
-  data: tuple = Depends(get_s3)):
+  data: tuple = Depends(get_s3),
+  ):
   """
   Fetch all Coned CTs by Accession (currently called 'Dicoms')
   return (most importantly) 
   """
   client, bucket = data
+  aid = user.aid
   result = await session.execute(
     text("select * from get_accession(:aid_input,:dicom_id_input)").bindparams(
       aid_input=aid,dicom_id_input=session_id)
@@ -132,6 +136,7 @@ async def create_accession(
   accession_id = -1
   try:
     accession = WriteAccession.model_validate_json(accession)
+    mask_url = ""
     for i, file in enumerate(files):
       # background task? 
       key = f"/Dicoms/{accession.aid}/{datetime.now()}_{file.filename}"
@@ -139,7 +144,7 @@ async def create_accession(
       
       # get pre-signed URL for DUMMY 
       # AI generated image mask
-      response = get_temp_url(client,bucket,key)
+      mask_url = get_temp_url(client,bucket,key)
       
       # add to: FileRecords, Dicoms, Dicomfiles
       file_record = FileRecords(filetype="slice", object_key=key)
@@ -171,7 +176,7 @@ async def create_accession(
     annotated_file = UploadNewFile(
       type="mask",
       object_key="",
-      s3_url=""
+      s3_url=mask_url
     )
     
     await session.commit()
