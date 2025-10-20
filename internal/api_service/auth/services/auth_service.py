@@ -34,7 +34,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
 async def authenticate_user(email: str, password: str, session: AsyncSession) -> Accounts | None:
   """Validate user credentials and return the matching account."""
-  user = await get_user_by_email(email, session)
+  user: Accounts | None = await get_user_by_email(email, session)
   if not user:
     return None
   if not verify_password(password, user.pswrd_hash):
@@ -62,11 +62,11 @@ async def get_current_user(
   except InvalidTokenError:
     raise credentials_exception
 
-  user = await get_user_by_email(email=token_data.email, session=session)
+  user: Accounts | None = await get_user_by_email(email=token_data.email, session=session)
   if user is None:
     raise credentials_exception
   return user
 
 
-async def get_current_active_user(current_user: Accounts = Depends(get_current_user)) -> Accounts:
-  return current_user
+async def get_current_active_user(current_user: Accounts = Depends(get_current_user)) -> Accounts | None:
+  return await current_user

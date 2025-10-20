@@ -7,7 +7,7 @@ from users.models.users import User
 
 async def get_user_by_email(email: str, session: AsyncSession) -> Accounts | None:
   result = await session.execute(
-    text("SELECT * FROM ACCOUNTS WHERE EMAIL=:email"),
+    text("SELECT aid FROM ACCOUNTS WHERE EMAIL=:email"),
     {"email": email}
   )
   record = result.mappings().first()
@@ -41,4 +41,4 @@ async def create_user(user: User, session: AsyncSession) -> Accounts:
   if record is None:
     raise RuntimeError("Failed to create user account")
   normalized_record = {key.lower(): value for key, value in record.items()}
-  return Accounts(**normalized_record)
+  return Accounts(aid=normalized_record["aid"])
