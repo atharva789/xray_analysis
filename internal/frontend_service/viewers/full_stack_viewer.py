@@ -1,14 +1,28 @@
-from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QSlider, QPushButton, QFileDialog, QMessageBox, QHBoxLayout
+from typing import List, Optional
+
+import pydicom
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
+from PyQt5.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
+
 from utils.dicom_loader import load_dicom_slices
 from utils.image_utils import get_qimage
 
+
 class FullStackViewer(QWidget):
-    def __init__(self):
+    def __init__(self, dicom_slices: Optional[List[pydicom.dataset.Dataset]] = None):
         super().__init__()
         self.setWindowTitle("Full Stack Viewer")
-        self.dicom_slices = []
+        self.dicom_slices: List[pydicom.dataset.Dataset] = dicom_slices or []
         self.current_index = 0
         self.timer = QTimer()
         self.timer.setInterval(300)
@@ -40,7 +54,12 @@ class FullStackViewer(QWidget):
         self.label.mouseMoveEvent = self.mouse_moved
         self.label.wheelEvent = self.handle_scroll
 
-        self.load_folder()
+        if self.dicom_slices:
+            self.slider.setMaximum(len(self.dicom_slices) - 1)
+            self.slider.setValue(0)
+            self.update_image(0)
+        else:
+            self.load_folder()
         self.resize(700, 700)
         self.show()
 
@@ -58,6 +77,8 @@ class FullStackViewer(QWidget):
         self.update_image(0)
 
     def update_image(self, index):
+        if not self.dicom_slices:
+            return
         self.current_index = index
         dcm = self.dicom_slices[index]
         self.img_array = dcm.pixel_array
@@ -67,12 +88,16 @@ class FullStackViewer(QWidget):
 
         qimg = get_qimage(dcm)
         pixmap = QPixmap.fromImage(qimg).scaled(
-            self.label.width(), self.label.height(),
-            Qt.KeepAspectRatio, Qt.SmoothTransformation
+            self.label.width() or 700,
+            self.label.height() or 700,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
         )
         self.label.setPixmap(pixmap)
 
     def handle_scroll(self, event):
+        if not self.dicom_slices:
+            return
         self.scroll_accumulator += event.angleDelta().y()
         threshold = 120
         if self.scroll_accumulator >= threshold:
@@ -85,7 +110,7 @@ class FullStackViewer(QWidget):
             self.scroll_accumulator = 0
 
     def mouse_moved(self, event):
-        if not hasattr(self, "img_array"):
+        if not hasattr(self, "img_array") or not self.dicom_slices:
             return
         x = event.pos().x()
         y = event.pos().y()
@@ -93,6 +118,8 @@ class FullStackViewer(QWidget):
             label_pix = self.label.pixmap()
             img_w = self.img_array.shape[1]
             img_h = self.img_array.shape[0]
+            if img_w == 0 or img_h == 0:
+                return
             scale_w = label_pix.width() / img_w
             scale_h = label_pix.height() / img_h
 
@@ -110,6 +137,8 @@ class FullStackViewer(QWidget):
                 )
 
     def toggle_play(self):
+        if not self.dicom_slices:
+            return
         if self.timer.isActive():
             self.timer.stop()
             self.play_button.setText("Play")
@@ -118,6 +147,8 @@ class FullStackViewer(QWidget):
             self.play_button.setText("Pause")
 
     def next_slice(self):
+        if not self.dicom_slices:
+            return
         idx = self.current_index + 1
         if idx >= len(self.dicom_slices):
             self.timer.stop()

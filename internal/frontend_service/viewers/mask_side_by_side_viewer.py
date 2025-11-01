@@ -1,27 +1,38 @@
-# viewers/mask_side_by_side_viewer.py
-
 import os
+from typing import List, Optional
+
 import cv2
-import pydicom
 import numpy as np
-from PyQt5.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSlider,
-    QPushButton, QFileDialog, QMessageBox
-)
+import pydicom
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 from utils.dicom_loader import load_dicom_slices
 from utils.image_utils import get_qimage
 
 
 class MaskSideBySideViewer(QWidget):
-    def __init__(self, mode="grayscale"):
+    def __init__(
+        self,
+        mode: str = "grayscale",
+        dicom_slices: Optional[List[pydicom.dataset.Dataset]] = None,
+        mask_images: Optional[List[np.ndarray]] = None,
+    ):
         super().__init__()
         self.mode = mode
         self.setWindowTitle(f"Side-by-Side Mask Viewer ({mode.upper()})")
-        self.dicom_slices = []
-        self.mask_images = []
+        self.dicom_slices = dicom_slices or []
+        self.mask_images = mask_images or []
         self.current_index = 0
 
         self.timer = QTimer()
@@ -59,13 +70,23 @@ class MaskSideBySideViewer(QWidget):
         layout.addLayout(control_layout)
         self.setLayout(layout)
 
-        self.load_folders()
+        if self.dicom_slices and self.mask_images:
+            self._configure_slider()
+            self.update_images(0)
+        else:
+            self.load_folders()
+
         self.resize(1400, 700)
         self.show()
 
+    def _configure_slider(self):
+        if not self.dicom_slices or not self.mask_images:
+            return
+        length = min(len(self.dicom_slices), len(self.mask_images))
+        self.slider.setMaximum(length - 1)
+        self.slider.setValue(0)
+
     def load_folders(self):
-        # fetch dicoms, masks from db on app startup (async)
-        
         ct_folder = QFileDialog.getExistingDirectory(self, "Select DICOM Slice Folder")
         if not ct_folder:
             return
@@ -76,18 +97,12 @@ class MaskSideBySideViewer(QWidget):
         self.dicom_slices = load_dicom_slices(ct_folder)
         self.mask_images = self.load_mask_images(mask_folder)
 
-        print(f"DICOM slices loaded: {len(self.dicom_slices)}")
-        print(f"Mask images loaded: {len(self.mask_images)}")
-
         if len(self.dicom_slices) != len(self.mask_images):
             QMessageBox.critical(self, "Mismatch", "DICOM and mask counts do not match.")
             return
-        
-        # send to DB
-        self.slider.setMaximum(len(self.dicom_slices) - 1)
-        self.slider.setValue(0)
-        self.update_images(0)
 
+        self._configure_slider()
+        self.update_images(0)
 
     def load_mask_images(self, folder_path):
         dicom_map = {
@@ -95,7 +110,7 @@ class MaskSideBySideViewer(QWidget):
             for i, ds in enumerate(self.dicom_slices)
         }
 
-        mask_images = [None] * len(self.dicom_slices)
+        mask_images: List[np.ndarray] = [None] * len(self.dicom_slices)  # type: ignore
 
         for fname in os.listdir(folder_path):
             if fname.startswith('.'):
@@ -108,12 +123,10 @@ class MaskSideBySideViewer(QWidget):
                 try:
                     instance = int(base, 16)
                 except ValueError:
-                    print(f"Skipping {fname}: not int or hex")
                     continue
 
             idx = dicom_map.get(instance)
             if idx is None:
-                print(f"No matching slice for mask {fname} (Instance: {instance})")
                 continue
 
             file_path = os.path.join(folder_path, fname)
@@ -121,9 +134,13 @@ class MaskSideBySideViewer(QWidget):
                 dcm = pydicom.dcmread(file_path)
                 img = dcm.pixel_array.astype(np.uint8)
                 mask_images[idx] = img
-                print(f"Loaded DICOM mask {fname} → slice {idx}")
-            except Exception as e:
-                print(f"Error reading {fname}: {e}")
+            except Exception:
+                try:
+                    raw = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+                    if raw is not None:
+                        mask_images[idx] = raw
+                except Exception:
+                    continue
 
         return [img for img in mask_images if img is not None]
 
@@ -156,6 +173,8 @@ class MaskSideBySideViewer(QWidget):
         self.mask_label.setPixmap(mask_pixmap)
 
     def toggle_play(self):
+        if not self.dicom_slices or not self.mask_images:
+            return
         if self.timer.isActive():
             self.timer.stop()
             self.play_button.setText("Play")
@@ -164,6 +183,8 @@ class MaskSideBySideViewer(QWidget):
             self.play_button.setText("Pause")
 
     def next_slice(self):
+        if not self.dicom_slices or not self.mask_images:
+            return
         idx = self.current_index + 1
         if idx >= len(self.dicom_slices):
             self.timer.stop()
