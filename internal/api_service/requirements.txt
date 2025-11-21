@@ -26,3 +26,4 @@ uvicorn==0.35.0
 asyncpg
 boto3
 sqlmodel
+joblib

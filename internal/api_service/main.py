@@ -1,5 +1,5 @@
 from cloud_services import *
-from fastapi import FastAPI, Request,Depends
+from fastapi import FastAPI, Request, Depends
 from contextlib import asynccontextmanager
 from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
