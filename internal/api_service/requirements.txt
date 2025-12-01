@@ -27,3 +27,6 @@ asyncpg
 boto3
 sqlmodel
 joblib
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+tritonclient[grpc]==2.48.0

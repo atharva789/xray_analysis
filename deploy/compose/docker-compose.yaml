@@ -12,6 +12,27 @@ services:
       - "5435:5435"
     volumes:
       - pgdata_pulse:/var/lib/postgresql/data
+
+  redis:
+    container_name: pulse_redis
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+
+  triton_server:
+    container_name: pulse_triton
+    image: nvcr.io/nvidia/tritonserver:24.04-py3
+    restart: always
+    command: >
+      tritonserver --model-repository=/models
+    volumes:
+      - ../../internal/inference/triton_models:/models
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8002:8002"
+
   api_service:
     container_name: fastapi_container
     restart: always
@@ -20,8 +41,39 @@ services:
       dockerfile: ../../internal/api_service/backend.Dockerfile
     env_file:
       - ../.env.backend.local
+    environment:
+      CELERY_BROKER_URL: redis://pulse_redis:6379/0
+      CELERY_RESULT_BACKEND: redis://pulse_redis:6379/0
+      TRITON_URL: pulse_triton:8001
+    depends_on:
+      - db_service
+      - redis
+      - triton_server
     ports:
       - "8010:8010"
+
+  celery_worker:
+    container_name: pulse_celery_worker
+    restart: always
+    build:
+      context: ../../internal/api_service
+      dockerfile: ../../internal/api_service/backend.Dockerfile
+    env_file:
+      - ../.env.backend.local
+    environment:
+      CELERY_BROKER_URL: redis://pulse_redis:6379/0
+      CELERY_RESULT_BACKEND: redis://pulse_redis:6379/0
+      TRITON_URL: pulse_triton:8001
+    command: >
+      celery -A task_queue.celery_app worker
+      --loglevel=INFO
+    depends_on:
+      - redis
+      - triton_server
+    deploy:
+      placement:
+        constraints:
+          - node.labels.role == celery
 
 volumes:
   pgdata_pulse:

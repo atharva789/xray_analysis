@@ -16,7 +16,7 @@ class FileResponse(BaseFile):
 
     
 class BaseAccession(BaseModel):
-  aid: int
+  aid: Optional[int]
   dicom_name: str
 
 class ReadAccession(BaseAccession):
@@ -32,7 +32,7 @@ class DBAccession(BaseAccession):
   
 class WriteAccession(BaseAccession):
   agaston_score: int = -1
-  files: List[UploadNewFile]
+  files: Optional[List[UploadNewFile]]
   
 class UpdateAccession(BaseModel):
   dicom_id: int = -1

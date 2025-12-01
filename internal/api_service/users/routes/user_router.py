@@ -1,10 +1,18 @@
+import json
+import logging
+import secrets
+import base64
+from datetime import datetime
+
 from sqlalchemy import text
 from cloud_services import get_s3
 from typing_extensions import Annotated, List
 from fastapi import APIRouter, Form, UploadFile, File, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from botocore.exceptions import BotoCoreError, ClientError
-import secrets, base64
+
+from fastapi import Request
+# from aiokafka import AIOKafkaProducer
 
 from auth.models.token import Token
 from auth.services.auth_service import *
@@ -12,8 +20,16 @@ from db_service.utils.db_utils import *
 from db_service.models.py_models import *
 from db_service.models.models import *
 from users.services.stream_service import StreamWrapper
+from task_queue.tasks import preprocess_accession_task
 
 URL_EXPIRATION_TIME=3600
+LOGGER = logging.getLogger(__name__)
+
+
+# async def get_kafka_producer(request: Request) -> AIOKafkaProducer:
+#   if not hasattr(request.app.state, "kafka_producer"):
+#     raise RuntimeError("Kafka producer is not initialized")
+#   return request.app.state.kafka_producer
 
 def get_temp_url(client, bucket, key):
   try:
@@ -113,7 +129,8 @@ async def create_accession(
   files: Annotated[List[UploadFile], File()],
   accession: str = Form(),
   session: AsyncSession = Depends(get_session), 
-  s3_data: tuple = Depends(get_s3)):
+  s3_data: tuple = Depends(get_s3)
+  ):
   """
   Returns 1 DicomFiles object:
   {
@@ -131,30 +148,31 @@ async def create_accession(
     ]
   }
   """
-  # write to S3, get object key  
+  if not files:
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No DICOM files were provided.")
+
   client, bucket = s3_data
   accession_id = -1
+  raw_prefix = ""
+
   try:
-    accession = WriteAccession.model_validate_json(accession)
-    mask_url = ""
-    for i, file in enumerate(files):
-      # background task? 
-      key = f"/Dicoms/{accession.aid}/{datetime.now()}_{file.filename}"
-      client.upload_fileobj(file.file, bucket, key)
-      
-      # get pre-signed URL for DUMMY 
-      # AI generated image mask
-      mask_url = get_temp_url(client,bucket,key)
-      
-      # add to: FileRecords, Dicoms, Dicomfiles
-      file_record = FileRecords(filetype="slice", object_key=key)
+    accession_payload = WriteAccession.model_validate_json(accession)
+    if accession_payload.aid is None:
+      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Patient AID is required.")
+
+    new_accession = Dicoms(dicom_name=accession_payload.dicom_name)
+    new_accession = await add_record(new_accession, session)
+    accession_id = new_accession.dicom_id
+    raw_prefix = f"dicoms/{accession_payload.aid}/{accession_id}/raw"
+
+    for idx, file in enumerate(files):
+      timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+      object_key = f"{raw_prefix}/{timestamp}_{idx}_{file.filename}"
+      client.upload_fileobj(file.file, bucket, object_key)
+
+      file_record = FileRecords(filetype="slice", object_key=object_key)
       file_record = await add_record(file_record, session)
-      if i == 0:
-        new_accession = Dicoms(dicom_name=accession.dicom_name)
-        new_accession = await add_record(new_accession, session)
-        accession_id = new_accession.dicom_id
-      
-      # add to DICOMFiles junction table,
+
       await session.execute(
         text("""
              INSERT INTO DICOMFILES (DICOM_ID, FILE_ID)
@@ -164,34 +182,38 @@ async def create_accession(
                file_id=file_record.file_id
              )
       )
-      # then PatientDicoms junction table
-      
-      patient_dicom_record = PatientDicoms(patient_id=accession.aid, dicom_id=accession_id)
-      patient_dicom_record = await add_record(patient_dicom_record, session)
-      
-      # dummy function: ML pipeline generates:
-      #   1. Mask
-      #   2. Agaston
-      # introduce dummy func as celery task?
-    annotated_file = UploadNewFile(
-      type="mask",
-      object_key="",
-      s3_url=mask_url
-    )
-    
+
+    patient_dicom_record = PatientDicoms(patient_id=accession_payload.aid, dicom_id=accession_id)
+    await add_record(patient_dicom_record, session)
+
     await session.commit()
-    
-    return WriteAccession(
-      aid=accession_id,
-      dicom_name=accession.dicom_name,
-      agaston_score=0,
-      files=[annotated_file]
+
+    annotated_file = UploadNewFile(
+      type="preprocessed",
+      object_key="",
+      s3_url=""
     )
-      
+
+  except HTTPException:
+    await session.rollback()
+    raise
   except Exception as e:
     await session.rollback()
-    # send to kafka next time
     raise HTTPException(status_code=501, detail=f"Error occured while file upload: {e}")
+
+  # Kick off preprocessing asynchronously so uploads remain fast.
+  if accession_id != -1 and raw_prefix:
+    try:
+      preprocess_accession_task.delay(accession_id=accession_id, s3_folder_prefix=raw_prefix)
+    except Exception as exc:  # pragma: no cover - best-effort enqueue
+      LOGGER.warning("Failed to enqueue preprocessing task for accession %s: %s", accession_id, exc)
+
+  return WriteAccession(
+    aid=accession_payload.aid,
+    dicom_name=accession_payload.dicom_name,
+    agaston_score=0,
+    files=[annotated_file]
+  )
 
 
 def get_random_str(k=32):

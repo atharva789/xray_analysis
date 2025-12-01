@@ -5,6 +5,8 @@ from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 import os
 
+# from aiokafka import AIOKafkaProducer
+
 from auth.routes.auth_router import auth_router
 from users.routes.user_router import user_router
 
@@ -14,6 +16,9 @@ db_conn_string = (
   f"@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}"
   f"/{os.getenv('DB_NAME')}"
 )
+
+# global variable for app
+# producer: AIOKafkaProducer = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +38,13 @@ async def lifespan(app: FastAPI):
     class_= AsyncSession
   )
   
+  #kafka producer for ML pre-processing pipeline
+  print("starting kafka producer for pre-processing")
+  # global producer
+  # producer = AIOKafkaProducer(bootstrap_servers="localhost:9092")
+  # await producer.start()
+  print("producer connected to kafka consumer")
+  
   
   # create tables is a SYNCHRONOUS method
   # so we need to run with run_sync
@@ -44,11 +56,13 @@ async def lifespan(app: FastAPI):
   app.state.sessionmaker = session_maker
   app.state.s3_client = client
   app.state.s3_bucket_name = bucket_name
+  # app.state.kafka_producer = producer
   
   try:
     yield
   finally:
     await engine.dispose()
+    # await app.state.kafka_producer.stop()
     
     
 
@@ -61,3 +75,4 @@ app.include_router(user_router, prefix="/user")
 @app.get("/test")
 async def get_home():
   return {"Hello": "World"}
+

@@ -1,0 +1,16 @@
+name: "img_seg_model"
+platform: "pytorch_libtorch"
+max_batch_size: 0
+
+input {
+  name: "input"
+  data_type: TYPE_FP32
+  dims: [ 1, 96, 96 ]
+  format: FORMAT_NCHW
+}
+
+output {
+  name: "output"
+  data_type: TYPE_FP32
+  dims: [ 2, 96, 96 ]
+}
