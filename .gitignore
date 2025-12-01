@@ -2,3 +2,6 @@
 *.env.*
 *.DS_Store
 */training_data
+internal/inference/training_data/
+internal/inference/triton_models/
+internal/inference/model_repo/
