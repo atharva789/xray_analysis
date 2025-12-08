@@ -38,7 +38,7 @@ PyQt Client ──▶ FastAPI (internal/api_service)
 | **FastAPI service** (`internal/api_service`) | Auth, user sessions, `/user/new_accession` uploads, S3 presigned URLs, SQLAlchemy models/migrations, dependency-injected services. |
 | **Task queue** (`internal/api_service/task_queue`) | Redis-backed Celery app, preprocessing pipeline using `pydicom`, `opencv-python-headless`, NumPy. Calls Triton via gRPC to obtain segmentation masks. |
 | **Inference assets** (`internal/inference`) | MONAI training notebook (`segmentation.ipynb`), TorchScript export (`model.pt`), Triton model repo (`triton_models/img_seg_model`). |
-| **Container stack** (`deploy/compose/docker-compose.yaml`) | Postgres 15, Redis 7, Triton 24.04, FastAPI, Celery worker. Exposes ports for API (8010) and Triton (8000/8001/8002). |
+| **Container stack** (`deploy/compose/docker-compose.yaml`) | Postgres 15, Redis 7, Triton 24.04, FastAPI, and the Celery worker. Exposes ports for API (8010) and Triton (8000/8001/8002). |
 | **Desktop viewer** (`internal/frontend_service`) | PyQt GUI for selecting sessions, launching viewers, and performing uploads/downloads. |
 
 ## Getting Started
@@ -82,5 +82,3 @@ PyQt Client ──▶ FastAPI (internal/api_service)
 - Automate model retraining/export pipelines.
 - Add observability (Prometheus/Grafana) for queue depth and inference latency.
 - Integrate IAM roles / STS tokens for S3 access when deploying to AWS.
-
-For questions or collaboration opportunities, feel free to open an issue or reach out directly. This project reflects hands-on experience with AWS-aligned ML systems, from ingestion to GPU inference. !*** End Patch*** End Patch נה? Error? Need proper apply_patch without escaping? use apply_patch. need info string? Already includes markers. call apply_patch. need no extra characters. Start again properly. Use *** Begin Patch etc. Provide file creation. Let's reapply. Need instructions: not to include ??? ok do. use apply_patch. let's do. 

@@ -7,7 +7,7 @@ from users.models.users import User
 
 async def get_user_by_email(email: str, session: AsyncSession) -> Accounts | None:
   result = await session.execute(
-    text("SELECT aid FROM ACCOUNTS WHERE EMAIL=:email"),
+    text("SELECT aid, pswrd_hash FROM ACCOUNTS WHERE EMAIL=:email"),
     {"email": email}
   )
   record = result.mappings().first()

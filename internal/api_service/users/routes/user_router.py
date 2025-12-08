@@ -67,7 +67,7 @@ async def get_dicoms_by_user(user = Depends(get_current_active_user), session: t
   ]
 
 
-@user_router.get("get-session/{session_id}")
+@user_router.get("get-session/{session_id}/")
 async def get_data_by_session(
   aid: int, 
   session_id: int, 
@@ -92,6 +92,9 @@ async def get_data_by_session(
   agaston_score = None
   if len(res) == 0:
     return None
+  
+  # path key
+  
   for row in res:    
     created_at = row["created_at"]
     dicom_name = row["dicom_name"]
@@ -104,13 +107,15 @@ async def get_data_by_session(
         s3_url=temp_url 
       )
     )
+    
   accession = ReadAccession(
     aid=aid,
     created_at=created_at,
     dicom_name=dicom_name,
     dicom_id=session_id,
     agaston_score=agaston_score,
-    files=files
+    files=files,
+    annotated_files=None
   )
   return accession
 
@@ -202,9 +207,12 @@ async def create_accession(
     raise HTTPException(status_code=501, detail=f"Error occured while file upload: {e}")
 
   # Kick off preprocessing asynchronously so uploads remain fast.
+  job_id = ""
   if accession_id != -1 and raw_prefix:
     try:
-      preprocess_accession_task.delay(accession_id=accession_id, s3_folder_prefix=raw_prefix)
+      async_result = preprocess_accession_task.delay(accession_id=accession_id, s3_folder_prefix=raw_prefix)
+      job_id: str = async_result.id
+      
     except Exception as exc:  # pragma: no cover - best-effort enqueue
       LOGGER.warning("Failed to enqueue preprocessing task for accession %s: %s", accession_id, exc)
 
@@ -212,7 +220,8 @@ async def create_accession(
     aid=accession_payload.aid,
     dicom_name=accession_payload.dicom_name,
     agaston_score=0,
-    files=[annotated_file]
+    files=[annotated_file],
+    job_id=job_id
   )
 
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import os
-from typing import Iterable, List
+from typing import Awaitable, Callable, Iterable, List, Optional, TypeVar
 
+import asyncpg
 import boto3
 import cv2
 import numpy as np
@@ -15,13 +17,62 @@ from .celery_app import celery_app
 
 LOGGER = logging.getLogger(__name__)
 TARGET_SIZE = int(os.getenv("SEGMENTATION_INPUT_SIZE", "96"))
-S3_BUCKET = os.getenv("DICOM_S3_BUCKET", "medical-dicoms")
+S3_BUCKET = os.getenv("BUCKET_NAME", "medical-dicoms")
 INTENSITY_MIN = float(os.getenv("SEGMENTATION_A_MIN", "-100"))
 INTENSITY_MAX = float(os.getenv("SEGMENTATION_A_MAX", "400"))
 TRITON_URL = os.getenv("TRITON_URL", "localhost:8001")
 TRITON_MODEL_NAME = os.getenv("TRITON_MODEL_NAME", "img_seg_model")
 TRITON_INPUT_NAME = os.getenv("TRITON_INPUT_NAME", "input")
 TRITON_OUTPUT_NAME = os.getenv("TRITON_OUTPUT_NAME", "output")
+
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+POSTGRES_DB = os.getenv("DB_NAME", "postgres")
+ASYNC_DB_DSN = (
+    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@"
+    f"{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
+PoolType = TypeVar("PoolType", bound=asyncpg.Pool)
+AsyncConnCallable = Callable[[asyncpg.Connection], Awaitable[None]]
+
+_db_pool: Optional[PoolType] = None
+
+
+async def _get_db_pool() -> PoolType:
+    """Lazily create an asyncpg connection pool for Celery workers."""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(dsn=ASYNC_DB_DSN, min_size=1, max_size=5)
+    return _db_pool
+
+
+async def execute_db_transaction(fn: AsyncConnCallable) -> None:
+    """
+    Execute the provided coroutine inside a database transaction.
+
+    Celery tasks can call this via `run_db_job` to ensure inserts/updates happen
+    atomically once preprocessing completes.
+    """
+    pool = await _get_db_pool()
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            await fn(connection)
+
+
+def run_db_job(fn: AsyncConnCallable) -> None:
+    """
+    Helper to run an async DB transaction from synchronous Celery tasks.
+
+    Example:
+        def persist():
+            async def _persist(conn):
+                await conn.execute(\"\"\"UPDATE ...\"\"\")
+            run_db_job(_persist)
+    """
+    asyncio.run(execute_db_transaction(fn))
 
 
 def _sort_key(ds: pydicom.dataset.Dataset) -> float:
@@ -133,7 +184,28 @@ def preprocess_accession_task(self, accession_id: int, s3_folder_prefix: str) ->
         mask_buffer.seek(0)
         mask_key = output_key.replace("preprocessed/slices.npy", "predictions/mask.npy")
         s3.upload_fileobj(mask_buffer, S3_BUCKET, mask_key)
-
+        
+        # write to DB
+        dicom_id = int(s3_folder_prefix.split("/")[2])
+        async def _persist(conn):
+          mask_id = await conn.fetchval(
+            "INSERT INTO filerecords (filetype, object_key) VALUES ($1, $2) RETURNING file_id",
+            "mask", mask_key
+          )
+          preprocessed_tensors_id = await conn.fetchval(
+            "INSERT INTO filerecords (filetype, object_key) VALUES ($1, $2) RETURNING file_id",
+            "slice", output_key
+          )
+          await conn.execute(
+            "INSERT INTO dicomfiles (dicom_id, file_id) VALUES ($1, $2)",
+            dicom_id, mask_id
+          )
+          await conn.execute(
+            "INSERT INTO dicomfiles (dicom_id, file_id) VALUES ($1, $2)",
+            dicom_id, preprocessed_tensors_id
+          )
+        run_db_job(_persist)
+        
         return {
             "status": "COMPLETED",
             "accession_id": accession_id,

@@ -23,6 +23,7 @@ class ReadAccession(BaseAccession):
   dicom_id: int = -1
   created_at: datetime
   files: List[FileResponse]
+  annotated_files: Optional[List[FileResponse]]
   agaston_score: Optional[int]
   
 class DBAccession(BaseAccession):
@@ -32,6 +33,7 @@ class DBAccession(BaseAccession):
   
 class WriteAccession(BaseAccession):
   agaston_score: int = -1
+  job_id: str
   files: Optional[List[UploadNewFile]]
   
 class UpdateAccession(BaseModel):

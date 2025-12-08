@@ -1,8 +1,9 @@
 from bcrypt import checkpw, hashpw, gensalt
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def verify_password(plain_password: str, hashed_password: bytes) -> bool:
   try:
-    return checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    stored = hashed_password if isinstance(hashed_password, bytes) else hashed_password.encode("utf-8")
+    return checkpw(plain_password.encode("utf-8"), stored)
   except ValueError:
     return False
     
